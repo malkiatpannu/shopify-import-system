@@ -88,6 +88,7 @@ Stores uploaded CSV files and processing status.
 |----------|
 | id |
 | original_filename |
+| stored_filename |
 | file_path |
 | status |
 | total_records |
@@ -107,10 +108,29 @@ Stores imported product data.
 |----------|
 | id |
 | upload_id |
+| handle |
 | title |
+| body_html |
+| vendor |
+| product_type |
+| tags |
+| published |
 | sku |
 | price |
+| compare_at_price |
+| requires_shipping |
+| taxable |
+| inventory_tracker |
+| inventory_qty |
+| inventory_policy |
+| fulfillment_service |
+| weight |
+| weight_unit |
+| image_src |
+| image_position |
+| image_alt_text |
 | shopify_product_id |
+| shopify_variant_id |
 | status |
 | error_message |
 
@@ -144,7 +164,6 @@ Stores application and import-related errors.
 | product_id |
 | source |
 | message |
-| context |
 
 ---
 
