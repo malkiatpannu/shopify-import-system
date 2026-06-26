@@ -254,44 +254,96 @@
 
 </div>
 
-<div class="card shadow-sm border-0">
-
-<div class="card-header bg-white">
-    <h5 class="mb-0">
-        Recent Errors
-    </h5>
-</div>
-
-<div class="card-body">
-
-    @if($errors->count())
-
+<div class="card shadow-sm border-0 mb-5">
+    <div class="card-header bg-white">
+        <h5 class="mb-0">Product Import Status</h5>
+    </div>
+    <div class="card-body">
+        @if($products->count() > 0)
         <div class="table-responsive">
-
             <table class="table table-striped align-middle">
-
                 <thead>
-
-                <tr>
-
-                    <th>ID</th>
-
-                    <th>Source</th>
-
-                    <th>Message</th>
-
-                    <th>Date</th>
-
-                </tr>
-
-                </thead>
-
-                <tbody>
-
-                @foreach($errors as $error)
-
                     <tr>
-
+                        <th>ID</th>
+                        <th>Title</th>
+                        <th>SKU</th>
+                        <th>Price</th>
+                        <th>Status</th>
+                        <th>Error</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($products as $product)
+                    <tr>
+                        <td>
+                            {{ $product->id }}
+                        </td>
+                        <td>
+                            {{ $product->title }}
+                        </td>
+                        <td>
+                            {{ $product->sku }}
+                        </td>
+                        <td>
+                            {{ $product->price }}
+                        </td>
+                        <td>
+                            @if($product->status === 'success')
+                                <span class="badge bg-success">
+                                    Success
+                                </span>
+                            @elseif($product->status === 'failed')
+                                <span class="badge bg-danger">
+                                    Failed
+                                </span>
+                            @elseif($product->status === 'processing')
+                                <span class="badge bg-warning">
+                                    Processing
+                                </span>
+                            @else
+                                <span class="badge bg-secondary">
+                                    Pending
+                                </span>
+                            @endif
+                        </td>
+                        <td>
+                            {{ $product->error_message ?? '-' }}
+                        </td>
+                    </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+        @else
+        <div class="text-center py-4">
+            <p class="text-muted mb-0">
+                No products imported yet.
+            </p>
+        </div>
+        @endif
+    </div>
+</div>
+<div class="card shadow-sm border-0">
+    <div class="card-header bg-white">
+        <h5 class="mb-0">
+            Recent Errors
+        </h5>
+    </div>
+    <div class="card-body">
+        @if($errors->count())
+        <div class="table-responsive">
+            <table class="table table-striped align-middle">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Source</th>
+                        <th>Message</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($errors as $error)
+                    <tr>
                         <td>
                             {{ $error->id }}
                         </td>
@@ -299,43 +351,26 @@
                         <td>
                             {{ $error->source }}
                         </td>
-
                         <td>
-
                             <span title="{{ $error->message }}">
                                 {{ \Illuminate\Support\Str::limit($error->message, 80) }}
                             </span>
-
                         </td>
-
                         <td>
                             {{ $error->created_at->diffForHumans() }}
                         </td>
-
                     </tr>
-
-                @endforeach
-
+                    @endforeach
                 </tbody>
-
             </table>
-
         </div>
-
-    @else
-
+        @else
         <div class="text-center py-4">
-
             <p class="text-muted mb-0">
                 No errors recorded.
             </p>
-
         </div>
-
-    @endif
-
+        @endif
+    </div>
 </div>
-
-</div>
-
 @endsection
