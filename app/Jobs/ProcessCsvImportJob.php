@@ -37,249 +37,243 @@ class ProcessCsvImportJob implements ShouldQueue
         ShopifyService $shopifyService
     ): void {
         Log::info('Csv import processing started', [
-            'upload_id' => $this->uploadId
+            'upload_id'     =>  $this->uploadId
         ]);
-        $upload = Upload::findOrFail(
-            $this->uploadId
-        );
-
+        $upload             =   Upload::findOrFail($this->uploadId);
         $upload->update([
-            'status' => 'processing',
-            'started_at' => now()
+            'status'        =>  'processing',
+            'started_at'    =>  now()
         ]);
-
         try {
-
-            $filePath = storage_path(
-                'app/private/' . $upload->file_path
-            );
-
+            $filePath       =   storage_path('app/private/' . $upload->file_path);
             if (!file_exists($filePath)) {
-
-                throw new Exception(
-                    'CSV file not found at loc: '.$filePath
-                );
+                throw new Exception('Uploaded CSV file not found.');
             }
-
-            $rows = array_map(
-                'str_getcsv',
-                file($filePath)
-            );
+            $rows           =   array_map('str_getcsv', file($filePath));
 
             if (empty($rows)) {
-
-                throw new Exception(
-                    'CSV is empty.'
-                );
+                throw new Exception('CSV file is empty.');
             }
 
-            $header = array_shift($rows);
+            $header         =   array_shift($rows);
+            // Remove UTF-8 BOM if present
+            $header[0]      =   preg_replace('/^\xEF\xBB\xBF/', '', $header[0]);
 
+            $requiredColumns=   [
+                'Title',
+                'Variant SKU',
+                'Variant Price',
+            ];
+
+            foreach ($requiredColumns as $column) {
+                if (!in_array($column, $header)) {
+                    throw new Exception(
+                        "Missing required CSV column: {$column}"
+                    );
+                }
+            }
             $upload->update([
-                'total_records' => count($rows)
+                'total_records' =>  count($rows)
             ]);
-
-            foreach ($rows as $rowData) {
-
+            foreach ($rows as $index => $rowData) {
+                $rowNumber  =   $index + 2;
+                $product    =   null;
                 try {
+                    if (count($header) !== count($rowData)) {
 
-                    if (
-                        count($header)
-                        !== count($rowData)
-                    ) {
+                        ErrorLog::create([
+                            'upload_id' =>  $upload->id,
+                            'source'    =>  'CSV Validation',
+                            'message'   =>  "Row {$rowNumber}: Invalid column count.",
+                        ]);
+
+                        $upload->increment('failed_records');
+                        $upload->increment('processed_records');
                         continue;
                     }
 
-                    $row = array_combine(
-                        $header,
-                        $rowData
-                    );
-
+                    $row    =   array_combine($header, $rowData);
                     DB::beginTransaction();
-                    if (empty($row['Title'])) {
-                        throw new Exception('Product title is required');
+                    if (empty(trim($row['Title'] ?? ''))) {
+                        throw new Exception("Row {$rowNumber}: Product title is required.");
                     }
-                    if (!is_numeric($row['Variant Price'])) {
-                        throw new Exception('Invalid product price');
+                    if (
+                        !is_numeric($row['Variant Price']) ||
+                        $row['Variant Price'] < 0
+                    ) {
+                        throw new Exception("Row {$rowNumber}: Invalid product price.");
                     }
-                    $product = Product::updateOrCreate(
+
+                    $product    =   Product::updateOrCreate(
                         [
-                            'sku' => $row['Variant SKU'] ?? null,
+                            'sku'           =>  $row['Variant SKU'] ?? null,
                         ],
                         [
-                            'upload_id' => $upload->id,
-                            'handle' => $row['Handle'] ?? null,
-                            'title' => $row['Title'] ?? '',
-                            'body_html' => $row['Body HTML'] ?? null,
-                            'vendor' => $row['Vendor'] ?? null,
-                            'product_type' => $row['Product Type'] ?? null,
-                            'tags' => $row['Tags'] ?? null,
-                            'published' =>
+                            'upload_id'     =>  $upload->id,
+                            'handle'        =>  $row['Handle'] ?? null,
+                            'title'         =>  $row['Title'] ?? '',
+                            'body_html'     =>  $row['Body HTML'] ?? null,
+                            'vendor'        =>  $row['Vendor'] ?? null,
+                            'product_type'  =>  $row['Product Type'] ?? null,
+                            'tags'          =>  $row['Tags'] ?? null,
+                            'published'     =>
                                 strtolower(
                                     $row['Published'] ?? 'false'
                                 ) === 'true',
-
-                            'sku' =>
+                            'sku'           =>
                                 $row['Variant SKU'] ?? null,
-
-                            'price' =>
+                            'price'         =>
                                 $row['Variant Price'] ?? 0,
-
-                            'compare_at_price' =>
+                            'compare_at_price'  =>
                                 $row['Variant Compare At Price'] ?? null,
-
                             'requires_shipping' =>
                                 strtolower(
                                     $row['Variant Requires Shipping'] ?? 'true'
                                 ) === 'true',
-
-                            'taxable' =>
+                            'taxable'       =>
                                 strtolower(
                                     $row['Variant Taxable'] ?? 'true'
                                 ) === 'true',
-
                             'inventory_tracker' =>
                                 $row['Variant Inventory Tracker'] ?? null,
-
-                            'inventory_qty' =>
+                            'inventory_qty'     =>
                                 $row['Variant Inventory Qty'] ?? 0,
-
-                            'inventory_policy' =>
+                            'inventory_policy'  =>
                                 $row['Variant Inventory Policy'] ?? null,
-
-                            'fulfillment_service' =>
+                            'fulfillment_service'   =>
                                 $row['Variant Fulfillment Service'] ?? null,
-
-                            'weight' =>
+                            'weight'        =>
                                 $row['Variant Weight'] ?? 0,
-
-                            'weight_unit' =>
+                            'weight_unit'   =>
                                 $row['Variant Weight Unit'] ?? null,
-
-                            'image_src' =>
+                            'image_src'     =>
                                 $row['Image Src'] ?? null,
-
-                            'image_position' =>
+                            'image_position'=>
                                 $row['Image Position'] ?? null,
-
-                            'image_alt_text' =>
+                            'image_alt_text'=>
                                 $row['Image Alt Text'] ?? null,
-
-                            'status' => 'processing'
+                            'status'        =>  'processing'
                         ]
                     );
 
-                    $shopifyResponse =
-                        $shopifyService
-                            ->createOrUpdateProduct(
-                                $product
-                            );
+                    $shopifyResponse    =   $shopifyService
+                            ->createOrUpdateProduct($product);
 
                     $product->update([
-                        'shopify_product_id'
-                            => $shopifyResponse['product_id'],
-
-                        'shopify_variant_id'
-                            => $shopifyResponse['variant_id'],
-
-                        'status' => 'success'
+                        'shopify_product_id'    =>  $shopifyResponse['product_id'],
+                        'shopify_variant_id'    =>  $shopifyResponse['variant_id'],
+                        'status'                =>  'success',
+                        'error_message'         =>  null,
                     ]);
 
                     ImportRecord::create([
-                        'upload_id' => $upload->id,
-                        'product_id' => $product->id,
-                        'action'
-                            => $shopifyResponse['action'],
-                        'status' => 'success',
-                        'request_payload'
-                            => json_encode(
+                        'upload_id'         =>  $upload->id,
+                        'product_id'        =>  $product->id,
+                        'action'            =>  $shopifyResponse['action'],
+                        'status'            =>  'success',
+                        'request_payload'   =>  json_encode(
                                 $shopifyResponse['request']
                             ),
-                        'response_payload'
-                            => json_encode(
+                        'response_payload'  =>  json_encode(
                                 $shopifyResponse['response']
                             ),
-                        'message'
-                            => 'Product imported successfully.'
+                        'message'           =>  'Product imported successfully.'
                     ]);
 
                     DB::commit();
-
-                    $upload->increment(
-                        'successful_records'
-                    );
-
-                } catch (Throwable $e) {
-
-                    DB::rollBack();
-
-                    $product?->update([
-                        'status' => 'failed',
-                        'error_message'
-                            => $e->getMessage()
+                    $upload->increment('successful_records');
+                    Log::info('Product imported successfully.', [
+                        'upload_id'     =>  $upload->id,
+                        'product_id'    =>  $product->id,
+                        'sku'           =>  $product->sku,
                     ]);
+                } catch (Throwable $e) {
+                    DB::rollBack();
+                    if ($product) {
+                        $product->update([
+                            'status'        => 'failed',
+                            'error_message' =>  $e->getMessage(),
+                        ]);
+                    }
 
                     ErrorLog::create([
-                        'upload_id' => $upload->id,
-                        'product_id'
-                            => $product->id ?? null,
-                        'source'
-                            => 'CSV Import Job',
-                        'message'
-                            => $e->getMessage()
+                        'upload_id'     =>  $upload->id,
+                        'product_id'    =>  $product->id ?? null,
+                        'source'        =>  'CSV Processing',
+                        'message'       =>  $e->getMessage()
                     ]);
 
                     ImportRecord::create([
-                        'upload_id' => $upload->id,
-                        'product_id'
-                            => $product->id ?? null,
-                        'action' => 'create',
-                        'status' => 'failed',
-                        'message'
-                            => $e->getMessage()
+                        'upload_id'     =>  $upload->id,
+                        'product_id'    =>  $product->id ?? null,
+                        'action'        =>  'create',
+                        'status'        =>  'failed',
+                        'message'       =>  $e->getMessage()
                     ]);
 
-                    $upload->increment(
-                        'failed_records'
-                    );
+                    $upload->increment('failed_records');
 
-                    Log::error(
-                        'Product Import Failed',
-                        [
-                            'error'
-                                => $e->getMessage()
-                        ]
-                    );
+                    Log::error('Product import failed.', [
+                        'upload_id'     =>  $upload->id,
+                        'row'           =>  $rowNumber,
+                        'sku'           =>  $row['Variant SKU'] ?? null,
+                        'error'         =>  $e->getMessage(),
+                    ]);
+                }finally {
+                    $upload->increment('processed_records');
                 }
-
-                $upload->increment(
-                    'processed_records'
-                );
             }
 
             $upload->update([
-                'status' => 'completed',
-                'completed_at' => now()
+                'status'        =>  'completed',
+                'completed_at'  =>  now()
             ]);
-
+            Log::info('CSV import completed.', [
+                'upload_id'     =>  $upload->id,
+                'total'         =>  $upload->total_records,
+                'successful'    =>  $upload->successful_records,
+                'failed'        =>  $upload->failed_records,
+            ]);
         } catch (Throwable $e) {
-
             $upload->update([
-                'status' => 'failed'
+                'status'        =>  'failed',
+                'completed_at'  =>  now(),
             ]);
 
             ErrorLog::create([
-                'upload_id' => $upload->id,
-                'source' => 'Upload',
-                'message' => $e->getMessage()
+                'upload_id'     =>  $upload->id,
+                'source'        =>  'CSV Processing',
+                'message'       =>  $e->getMessage()
             ]);
-
-            Log::error(
-                'Upload Failed ---',
-                [
-                    'error' => $e->getMessage()
-                ]
-            );
+            Log::error('CSV processing failed.', [
+                'upload_id'     =>  $upload->id,
+                'error'         =>  $e->getMessage(),
+            ]);
+            throw $e;
         }
+    }
+
+    public function failed(Throwable $exception): void
+    {
+        $upload                 =   Upload::find($this->uploadId);
+        if (!$upload) {
+            return;
+        }
+
+        $upload->update([
+            'status'            =>  'failed',
+            'completed_at'      =>  now(),
+        ]);
+
+        ErrorLog::create([
+            'upload_id'         =>  $upload->id,
+            'source'            =>  'Queue',
+            'message'           =>  $exception->getMessage(),
+        ]);
+
+        Log::error('CSV import job failed after all retry attempts.', [
+            'upload_id'         =>  $upload->id,
+            'error'             =>  $exception->getMessage(),
+        ]);
     }
 }
